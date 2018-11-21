@@ -30,7 +30,9 @@
 				2: "brick.lit",
 				3: "brick.old",
 				4: "brick.hit",
-				5: "brick.new"
+				5: "brick.new",
+				6: "ground.bowser.blue",
+				7: "hammer"
 			};
 			this.playerSpawn = level_data.spawnPoint;
 			this.level = [];
@@ -120,6 +122,7 @@
 			};
 		};
 		function Entity(x, y, size, type, velX, velY) {
+			this.id = Math.random() * Math.pow(2, 31);
 			this.texture = type;
 			this.vel = new Vector(velX, velY);
 			this.pos = new Vector(x, y);
@@ -127,8 +130,14 @@
 			this.onGround = (lvl, pos)=>{
 				let x = Math.floor(pos.x / this.bs),
 					y = Math.floor(pos.y / this.bs) + 1;
-				let fall = ["air", "water"].join(" ");
-				if(!(fall.includes(lvl[y][x])) || !(["air", "water"].join(" ").includes(lvl[y][x+1]))) {
+				let fall = ["air", "water"].join(" "), 
+					hurt = ["ground.bowser.blue"].join(" "),
+					win = ["hammer"];
+				if(hurt.includes(lvl[y][x]) || hurt.includes(lvl[y][x+1])) {
+					return game.checkDeath(this.id);
+				} else if(win.includes(lvl[y][x]) || win.includes(lvl[y][x+1])) {
+					return game.checkWin(this.id);
+				} else if(!(fall.includes(lvl[y][x])) || !(fall.includes(lvl[y][x+1]))) {
 					return fall.includes(lvl[y][x]) ? lvl[y][x+1] : lvl[y][x];
 				} else {
 					return false;
@@ -143,16 +152,13 @@
 				} else {
 					this.vel.mult(new Vector(0.125, 0.125));
 				};
-				if(!this.onGround(game.world.level, this.pos)) {
-					this.vel.add(game.gravity);
-					this.vel.add(game.airFriction);
-				} else {
-					this.vel.closerToZeroBy(game.groundFriction);
-					this.vel.add(game.groundFriction);
+				if(this.onGround(game.world.level, this.pos)) {
 					if(this.vel.y > 0) {
 						this.vel.y = 0;
 						this.pos.y = Math.floor(this.pos.y / this.bs) * this.bs;
 					};
+				} else {
+					this.vel.add(game.gravity);
 				};
 				this.vel.constrain(6, 20);
 				return this;
@@ -174,8 +180,6 @@
 		};
 		function GameInstance(canvas, spritesheet, level) {
 			this.gravity = new Vector(0, 0.8);
-			this.airFriction = new Vector(0, -0.1);
-			this.groundFriction = new Vector(1, 0);
 			this.entities = [];
 			this.tiles = [];
 			this.canvas = canvas;
@@ -183,6 +187,7 @@
 			this.context.imageSmoothingEnabled = false;
 			this.spritesheet = spritesheet;
 			this.world = level;
+			this.dead = false;
 			this.gameFrame = 0;
 			this.gameFrames = 0;
 			this.gameFrameRate = 0;
@@ -197,18 +202,50 @@
 				let err = new Error("Player not found in game!");
 				throw err;
 			};
+			this.checkDeath = (id)=>{
+				if(this.getPlayer().id == id) {
+					this.dead = true;
+				};
+			};
+			this.checkWin = (id)=>{
+				if(this.getPlayer().id == id) {
+					this.win = true;
+				};
+			};
 			this.frame = (targetFps)=>{
 				let time = new Date().getTime();
-				this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
 				let pX = -Math.floor(this.getPlayer().pos.x / 896) * 896,
 					pY = -Math.floor(this.getPlayer().pos.y / 640) * 640;
-				for(let y = 0; y < this.world.level.length; y++) {
-					for(let x = 0; x < this.world.level[y].length; x++) {
-						this.spritesheet.renderSpriteByName(this, pX+x*tileSize, pY+y*tileSize, this.world.level[y][x], tileSize, tileSize);
+				if(this.dead == false && !this.win) {
+					this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+					for(let y = 0; y < this.world.level.length; y++) {
+						for(let x = 0; x < this.world.level[y].length; x++) {
+							this.spritesheet.renderSpriteByName(this, pX+x*tileSize, pY+y*tileSize, this.world.level[y][x], tileSize, tileSize);
+						};
 					};
-				};
-				for(let eid = 0; eid < this.entities.length; eid++) {
-					this.entities[eid].show(this).update(this);
+					for(let eid = 0; eid < this.entities.length; eid++) {
+						this.entities[eid].show(this).update(this);
+					};
+				} else if(this.win) {
+					this.context.fillStyle = 'rgba(0, 50, 0, 0.5)';
+					this.context.fillRect(0, 0, 896, 640);
+					this.dead = -1; // Prevent next frame! 
+					this.context.font = '48px Ubuntu Bold';
+					this.context.fillStyle = '#CDF';
+					let TIPS = ["That's never happened before!", "Unheard of!", "I'll get you next time", "Dammit"];
+					let ID = Math.floor(Math.random() * TIPS.length);
+					this.context.fillText("  You win! Press R to replay", 48, 113);
+					this.context.fillText(`    > ${TIPS[ID]}`, 48, 192);
+				} else {
+					this.context.fillStyle = 'rgba(50, 0, 0, 0.5)';
+					this.context.fillRect(0, 0, 896, 640);
+					this.dead = -1; // Prevent next frame! 
+					this.context.font = '48px Ubuntu Bold';
+					this.context.fillStyle = '#CDF';
+					let TIPS = ["Don't Die", "Living is Key", "However you died, don't do so again", "I knew it!", "Is that really a suprise?"];
+					let ID = Math.floor(Math.random() * TIPS.length);
+					this.context.fillText("  You loose, press R to replay", 48, 113);
+					this.context.fillText(`    > ${TIPS[ID]}`, 48, 192);
 				};
 				this.gameFrame++;
 				this.gameFrames++;
@@ -218,7 +255,7 @@
 					this.gameFrames = 0;
 					console.log(this.gameFrameRate);
 				};
-				setTimeout(this.frame.bind(this), 1000 / targetFps);
+				if(this.dead != -1) setTimeout(this.frame.bind(this), 1000 / targetFps, targetFps);
 			};
 			this.start = (targetFps)=>{
 				this.gameFrameRate = targetFps;
@@ -234,7 +271,9 @@
 			"brick.old": [2, 0],
 			"brick.hit": [3, 0],
 			"brick.new": [[24, 0], [25, 0], [26, 0], [25, 0], 4.5],
-			"player": [[30, 1], [31, 1], [32, 1], [31, 1], 4.5]
+			"player": [[30, 1], [31, 1], [32, 1], [31, 1], 4.5],
+			"hammer": [[27, 1], [28, 1], [29, 1], [28, 1], 4.5],
+			"ground.bowser.blue": [4, 26]
 		}), level = new LevelLoader({
 			level_array: [
 				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -250,13 +289,33 @@
 				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1],
 				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
 				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 3, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1],
 				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 3, 0, 3, 0, 0, 0, 0, 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 1],
-				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 1],
 				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+				[1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+				[1, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1],
+				[1, 1, 1, 1, 1, 1, 6, 6, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1],
+				[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 1, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 2, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 3, 2, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 3, 3, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 0, 0, 0, 1],
+				[1, 3, 3, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 3, 3, 3, 0, 1, 6, 6, 6, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+				[1, 1, 1, 1, 1, 1, 6, 6, 6, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
 			],
 			enemies: [],
 			spawnPoint: [6, 4]
@@ -266,17 +325,19 @@
 			game.start(30);
 		};
 		window.onkeydown = (evt)=>{
-			let onGround = game.getPlayer().onGround(game.world.level, game.getPlayer().pos);
 			evt.preventDefault();
-			if((evt.metaKey || evt.ctrlKey) && evt.key.toLowerCase() == 'r') {
+			let onGround = game.getPlayer().onGround(game.world.level, game.getPlayer().pos);
+			if(evt.key.toLowerCase() == 'r') {
 				document.location.reload();
-			};
-			if(evt.key == "ArrowLeft" || evt.key.toLowerCase() == 'a') {
+			} else if(evt.key == "ArrowLeft" || evt.key.toLowerCase() == 'a') {
 				game.getPlayer().vel.fartherFromZeroBy(new Vector(-8, 0));
 			} else if(evt.key == "ArrowRight" || evt.key.toLowerCase() == 'd') {
 				game.getPlayer().vel.fartherFromZeroBy(new Vector(+8, 0));
 			} else if(evt.key == "ArrowUp" || evt.key.toLowerCase() == 'w' && onGround) {
-				game.getPlayer().vel.y = -17;
+				game.getPlayer().vel.y = -12;
+				if(evt.metaKey || evt.ctrlKey || evt.shiftKey) {
+					game.getPlayer().vel.y = -18;
+				};
 			};
 		};
 		window.onkeyup = (evt)=>{
@@ -286,9 +347,9 @@
 				document.location.reload();
 			};
 			if(evt.key == "ArrowLeft" || evt.key.toLowerCase() == 'a') {
-				game.getPlayer().vel.mult(new Vector(0, 1));
+				game.getPlayer().vel.mult(new Vector(0, 1.5));
 			} else if(evt.key == "ArrowRight" || evt.key.toLowerCase() == 'd') {
-				game.getPlayer().vel.mult(new Vector(0, 1));
+				game.getPlayer().vel.mult(new Vector(0, 1.5));
 			};
 		};
 	</script>
